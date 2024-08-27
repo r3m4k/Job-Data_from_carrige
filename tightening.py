@@ -3,13 +3,14 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 # from pprint import pprint
 
 
 class measuring:
     def __init__(self, dir, titleIndex, filter_type, end_height):
         """
-        Класс, предназначенный для "стягивания" графиков в определённых точкахpy
+        Класс, предназначенный для "стягивания" графиков в определённых точка
 
         :param dir: Директория расположения CSV файлов, относительно расположения программы.
         :param titleIndex: Величина, по которой будет происходить "стяжка"
@@ -118,16 +119,20 @@ class measuring:
 
         for fileIndex in range(len(self.files)):
 
-            self.data.append(self.clearing(np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[self.titleIndex]) * np.pi / 180)
-            self.coordinates.append(self.clearing(np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[0]))
+            try:
+                self.data.append(self.clearing(np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[self.titleIndex]) * np.pi / 180)
+                self.coordinates.append(self.clearing(np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[0]))
 
-            marks = np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[3]
-            marked_coordinates = np.zeros(0)
-            for markIndex in range(len(marks)):
-                if marks[markIndex] == 'Piket':
-                    marked_coordinates = np.append(marked_coordinates, self.coordinates[fileIndex][markIndex])
+                marks = np.loadtxt(f'{self.dir}/{self.files[fileIndex]}', dtype=str, skiprows=1, unpack=True, encoding="UTF-8")[3]
+                marked_coordinates = np.zeros(0)
+                for markIndex in range(len(marks)):
+                    if marks[markIndex] == 'Piket':
+                        marked_coordinates = np.append(marked_coordinates, self.coordinates[fileIndex][markIndex])
 
-            self.marked_coordinates.append(marked_coordinates)
+                self.marked_coordinates.append(marked_coordinates)
+
+            except UnicodeDecodeError:      # Ошибка, возникающая, если в self.dir присутствуют другие CSV файлы, который не подходят под шаблон CSV файла с измерениями
+                print(f'Ошибка чтения {self.files[fileIndex]}')
 
     @staticmethod
     def clearing(column):
@@ -417,5 +422,10 @@ class measuring:
     #################################
 
 
-self_dir = './'
-measuring(self_dir, 7, 'average_filter', 1.2)        # 7 - номер столбца с Креном
+parser = argparse.ArgumentParser()                                              # Создадим парсер для анализа аргументов из командной строки
+parser.add_argument("-eh", "--end_height", type=float, default=0)               # Добавим в него необязательный аргумент end_height, который передадим
+                                                                                # в конструктор класса measuring в качестве параметра end_height
+                                                                                # Значение по умолчанию - 0
+
+self_dir = './'                                                                 # Директория в которой будет работать стягивание данных
+measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)        # 7 - номер столбца с Креном
