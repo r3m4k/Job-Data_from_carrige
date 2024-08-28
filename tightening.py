@@ -4,6 +4,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+from copy import deepcopy
 # from pprint import pprint
 
 
@@ -155,14 +156,14 @@ class measuring:
         После выполнения функции список массивов координат self.coordinates станет массивом координат с шагом self.step с таким же диапазоном.
         """
 
-        min_coordinate = np.max([self.coordinates[fileIndex][0] if not fileIndex % 2 else self.coordinates[fileIndex][-1] for fileIndex in range(len(self.files))]) + self.step
-        max_coordinate = np.min([self.coordinates[fileIndex][-1] if not fileIndex % 2 else self.coordinates[fileIndex][0] for fileIndex in range(len(self.files))]) - self.step
-
-        # +- self.step для того, чтобы новые точки были всегда между старыми,
-        # иначе не будет работать self.line_coefficient
-
         for fileIndex in range(len(self.files)):
-            coord = min_coordinate
+            min_coordinate = self.coordinates[fileIndex][0] if 'out' in self.files[fileIndex] else self.coordinates[-1]
+            max_coordinate = self.coordinates[fileIndex][-1] if 'out' in self.files[fileIndex] else self.coordinates[0]
+            # Тк в файлах *_out.csv координаты идут по возрастанию, а в *_in.csv по убыванию
+
+            coord = (min_coordinate // self.step + 1) * self.step       # Таким образом мы гарантируем, что coord будет кратен self.step и больше
+                                                                        # min_coordinate, что необходимо для корректной работы self.line_coefficients,
+                                                                        # тк coord должна всегда находится между двумя точками из self.coordinates[fileIndex]
             coord_array = np.zeros(1)
             file_data_array = np.zeros(1)
 
@@ -182,7 +183,70 @@ class measuring:
             self.coordinates[fileIndex] = coord_array
             self.data[fileIndex] = file_data_array
 
-        self.coordinates = self.coordinates[0]
+        self.filling_beginning()
+        self.filling_ending()
+
+    def filling_beginning(self):
+        pass
+
+    def filling_ending(self):
+        """
+        Заполнение данных до максимальной координаты, если файл записан не полностью.
+        Например, есть три файла, записанные с 0 до 175, 200 и 160 метров соответственно.
+        Тогда по выполнению данной функции все три файла будут заполнены до 200 метров таким образом:
+        1. Третий файл продолжается до 175 метров средним значением с первого и второго файла без скачка после 160 метров.
+        2. Первый и третий продолжаются значениями второго без скачка после 175 метров.
+
+        Аналогично с любым количеством файлов.
+
+        Важно!  Если данные в файле записаны до 95 метров (меньше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
+        """
+        max_coordinate = np.max([self.coordinates[fileIndex][-1] if 'out' in self.files[fileIndex] else self.coordinates[0] for fileIndex in range(len(self.files))])
+        # Тк в файлах *_out.csv координаты идут по возрастанию, а в *_in.csv по убыванию
+
+        for fileIndex in range(len(self.files)):
+            # Удалим данные с файлов, которые записаны меньше чем на половине всего пути
+            upper_bound = self.coordinates[fileIndex][0] if 'out' in self.files[fileIndex] else self.coordinates[-1]    # Максимальная координата в self.coordinates[fileIndex]
+            if upper_bound < (max_coordinate / 2):
+                print(f"Файл {self.files[fileIndex]} является нерепрезентативным, поэтому он не будет анализироваться")
+                self.files.pop(fileIndex)
+                self.data.pop(fileIndex)
+                self.coordinates.pop(fileIndex)
+                self.marked_coordinates.pop(fileIndex)
+
+        data = []    # Создадим список, в который скопируем self.data, чтобы в ходе выполнения self.data не изменился
+        for fileIndex in range(len(self.files)):
+            data.append(deepcopy(self.data[fileIndex]))
+
+        middle_coordinate = ((max_coordinate / 2) // self.step) * self.step     # Выберем середину так, чтобы middle_coordinate была "кратна" self.step (тк мы работаем с
+                                                                                # float, то остаток будет порядка 1e-14, поэтому говорить о "кратности" не совсем корректно).
+
+        lengths = []     # Список длин элементов data после обрезки
+        for fileIndex in range(len(data)):
+            data[fileIndex] = data[fileIndex][np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]:]
+            # Обрежем data[fileIndex], начиная с того индекса, при котором self.coordinates[fileIndex] ближе всего к middle_coordinate
+            # ([0][0] необходимо из-за особенности объекта, возвращаемого np.where())
+            lengths.append(len(data[fileIndex]))
+
+        sorted_lengths = np.unique(np.sort(lengths))        # Создадим отсортированный список длин элементов data
+                                                            # Продолжая пример из описания метода (без учёта обрезания), sorted_lengths = [160, 175, 200]
+
+        reference_arraysIndex = []                          # Список индексов опорных массивов на различных участках заполнения
+
+        for index in range(1, len(sorted_lengths)):         # Начинаем не с первого элемента, тк массивы длиной sorted_lengths[0] не будут опорными
+            reference_arrayIndex = []                       # Список индексов опорных массивов на определённом участке заполнения
+            for dataIndex in range(len(data)):
+                if len(data[dataIndex]) >= sorted_lengths[index]:
+                    reference_arrayIndex.append(dataIndex)
+
+            reference_arraysIndex.append(reference_arrayIndex)
+            # Из примера (без учёта обрезания): reference_arraysIndex[0] = [0, 1]
+            #                                   // соответствует участку 160 - 175 метров
+            #                                   // 0 - индекс первого массива
+            #                                   // 1 - индекс второго массива
+            #
+            #                                   reference_arraysIndex[1] = [1]    
+            #                                   // соответствует участку 175 - 200 метров
 
     @staticmethod
     def approximate(x1, y1, x2, y2):
@@ -422,10 +486,15 @@ class measuring:
     #################################
 
 
-parser = argparse.ArgumentParser()                                              # Создадим парсер для анализа аргументов из командной строки
-parser.add_argument("-eh", "--end_height", type=float, default=0)               # Добавим в него необязательный аргумент end_height, который передадим
-                                                                                # в конструктор класса measuring в качестве параметра end_height
-                                                                                # Значение по умолчанию - 0
+# parser = argparse.ArgumentParser()                                                          # Создадим парсер для анализа аргументов из командной строки
+# parser.add_argument("-eh", "--end_height", type=float, default=0,
+#                     help="Разница высоты между первой и последней точками измерения")       # Добавим в него необязательный аргумент end_height, который передадим
+#                                                                                             # в конструктор класса measuring в качестве параметра end_height
+#                                                                                             # Значение по умолчанию - 0
+#
+# self_dir = './'                                                                             # Директория в которой будет работать стягивание данных
+# measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)                    # 7 - номер столбца с Креном
 
-self_dir = './'                                                                 # Директория в которой будет работать стягивание данных
-measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)        # 7 - номер столбца с Креном
+self_dir = './CSV files/17.07.24'                                                                             # Директория в которой будет работать стягивание данных
+measuring(self_dir, 7, 'average_filter', 1.2)                    # 7 - номер столбца с Креном
+
