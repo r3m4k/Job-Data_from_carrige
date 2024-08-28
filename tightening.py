@@ -5,7 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from copy import deepcopy
-# from pprint import pprint
+from pprint import pprint
+from time import sleep
 
 
 class measuring:
@@ -60,14 +61,22 @@ class measuring:
     def start(self):
         self.reading_values()
         self.interpolation()
-        self.get_common_marked_coordinates()
-        # pprint(self.marked_coordinates)
 
         # Проинтегрируем self.data
         for index in range(len(self.data)):
-            self.data[index] = self.integration(self.coordinates, self.data[index])
+            self.data[index] = self.integration(self.coordinates[index], self.data[index])
 
-        # self.charting(self.coordinates, self.data, label=self.files)
+        for fileIndex in range(len(self.files)):
+            plt.plot(self.coordinates[fileIndex], self.data[fileIndex], label=self.files[fileIndex])
+        plt.grid()
+        plt.legend()
+        plt.show()
+        exit(10)
+
+        self.get_common_marked_coordinates()
+        # pprint(self.marked_coordinates)
+
+
 
         # Сведём графики вертикального профиля в последней точке
         for index in range(len(self.data)):
@@ -152,14 +161,18 @@ class measuring:
 
     def interpolation(self):
         """
-        Получение значений self.data в одних и тех же координатах с шагом self.step с диапазоном от наибольшей минимальной координаты до наименьшей максимальной координаты.
+        Получение значений self.data в одних и тех же координатах с шагом self.step с диапазоном от наименьшей минимальной координаты до наибольшей максимальной координаты.
         После выполнения функции список массивов координат self.coordinates станет массивом координат с шагом self.step с таким же диапазоном.
         """
 
         for fileIndex in range(len(self.files)):
-            min_coordinate = self.coordinates[fileIndex][0] if 'out' in self.files[fileIndex] else self.coordinates[-1]
-            max_coordinate = self.coordinates[fileIndex][-1] if 'out' in self.files[fileIndex] else self.coordinates[0]
+            reverseFlag = False if self.coordinates[fileIndex][0] < self.coordinates[fileIndex][-1] else True       # Флаг развёрнутого файла
             # Тк в файлах *_out.csv координаты идут по возрастанию, а в *_in.csv по убыванию
+
+            min_coordinate = self.coordinates[fileIndex][0] if not reverseFlag else self.coordinates[fileIndex][-1]
+            max_coordinate = self.coordinates[fileIndex][-1] if not reverseFlag else self.coordinates[fileIndex][0]
+            max_coordinate -= self.step     # Необходимо, чтобы справа от coord всегда была точка из self.coordinates[fileIndex].
+                                            # Это необходимо для корректной работы self.line_coefficients.
 
             coord = (min_coordinate // self.step + 1) * self.step       # Таким образом мы гарантируем, что coord будет кратен self.step и больше
                                                                         # min_coordinate, что необходимо для корректной работы self.line_coefficients,
@@ -183,6 +196,14 @@ class measuring:
             self.coordinates[fileIndex] = coord_array
             self.data[fileIndex] = file_data_array
 
+            plt.plot(self.coordinates[fileIndex], self.data[fileIndex], label=self.files[fileIndex])
+            plt.scatter(self.coordinates[fileIndex][-1], self.data[fileIndex][-1], zorder=10, edgecolor="black")
+
+        plt.grid()
+        plt.legend()
+        plt.title("Изначальные данные")
+        plt.show()
+
         self.filling_beginning()
         self.filling_ending()
 
@@ -201,12 +222,12 @@ class measuring:
 
         Важно!  Если данные в файле записаны до 95 метров (меньше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
         """
-        max_coordinate = np.max([self.coordinates[fileIndex][-1] if 'out' in self.files[fileIndex] else self.coordinates[0] for fileIndex in range(len(self.files))])
+        max_coordinate = np.max([self.coordinates[fileIndex][-1] for fileIndex in range(len(self.files))])
         # Тк в файлах *_out.csv координаты идут по возрастанию, а в *_in.csv по убыванию
 
         for fileIndex in range(len(self.files)):
             # Удалим данные с файлов, которые записаны меньше чем на половине всего пути
-            upper_bound = self.coordinates[fileIndex][0] if 'out' in self.files[fileIndex] else self.coordinates[-1]    # Максимальная координата в self.coordinates[fileIndex]
+            upper_bound = self.coordinates[fileIndex][-1]    # Максимальная координата в self.coordinates[fileIndex]
             if upper_bound < (max_coordinate / 2):
                 print(f"Файл {self.files[fileIndex]} является нерепрезентативным, поэтому он не будет анализироваться")
                 self.files.pop(fileIndex)
@@ -240,13 +261,44 @@ class measuring:
                     reference_arrayIndex.append(dataIndex)
 
             reference_arraysIndex.append(reference_arrayIndex)
-            # Из примера (без учёта обрезания): reference_arraysIndex[0] = [0, 1]
-            #                                   // соответствует участку 160 - 175 метров
-            #                                   // 0 - индекс первого массива
-            #                                   // 1 - индекс второго массива
-            #
-            #                                   reference_arraysIndex[1] = [1]    
-            #                                   // соответствует участку 175 - 200 метров
+
+        # Из примера (без учёта обрезания): reference_arraysIndex[0] = [0, 1]
+        #                                   // соответствует участку 160 - 175 метров
+        #                                   // 0 - индекс первого массива
+        #                                   // 1 - индекс второго массива
+        #
+        #                                   reference_arraysIndex[1] = [1]
+        #                                   // соответствует участку 175 - 200 метров
+
+        for index in range(len(reference_arraysIndex)):
+            for dataIndex in range(len(data)):
+                if dataIndex not in reference_arraysIndex[index]:
+                    data[dataIndex] = self.filling_data(data[dataIndex],
+                                                        [data[referenceIndex][sorted_lengths[index] - 1:sorted_lengths[index+1]]
+                                                                             for referenceIndex in reference_arraysIndex[index]])
+
+        for fileIndex in range(len(self.files)):
+            self.data[fileIndex] = np.append(self.data[fileIndex], data[fileIndex][:lengths[fileIndex]])
+            self.coordinates[fileIndex] = np.append(self.coordinates[fileIndex], np.arange(self.coordinates[fileIndex][-1], max_coordinate + self.step, self.step))
+
+    @staticmethod
+    def filling_data(array, reference_arrays, reverse=False):
+        """
+        Добавление к array средних значений reference_arrays в каждой точке.
+
+        !!! Напоминание !!! Реализовать использование reverse, чтобы эту же функцию можно было использовать и для filling_beginning.
+        :param array: массив, к которому будут добавлены данные.
+        :param reference_arrays: массивы, данные из которых будут использованы при добавлении к array.
+        :param reverse: флаг разворота файлов. Если True, то данные из всех массивов будут развёрнуты.
+        :return: дополненный array
+        """
+
+        # ordIndex (ordinal index) - порядковый индекс
+        shift = np.mean([reference_arrays[ordIndex][0] for ordIndex in range(len(reference_arrays))]) - array[0]
+        for index in range(len(reference_arrays[0])):
+            array = np.append(array, np.mean([reference_arrays[ordIndex][index] for ordIndex in range(len(reference_arrays))]) - shift)
+
+        return array
 
     @staticmethod
     def approximate(x1, y1, x2, y2):
