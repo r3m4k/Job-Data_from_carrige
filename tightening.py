@@ -10,22 +10,25 @@ from time import sleep
 
 
 class measuring:
-    def __init__(self, dir, titleIndex, filter_type, end_height):
+    def __init__(self, dir, titleIndex, filter_type, end_height, testFlag=False):
         """
         Класс, предназначенный для "стягивания" графиков в определённых точка
 
         :param dir: Директория расположения CSV файлов, относительно расположения программы.
         :param titleIndex: Величина, по которой будет происходить "стяжка"
         :param filter_type: Используемый фильтр.
-                            Возможные варианты: average_filter - фильтр усреднения
-                                                median_filter - медианный фильтр
+                            Возможные варианты: average_filter - фильтр усреднения,
+                                                median_filter - медианный фильтр.
         :param end_height: Высота в конце проезда, относительно его начала.
+        :param testFlag: Флаг тестового режима. Если True, то по ходу выполнения программы
+                         будут появляться вспомогательные изображения, поясняющие выполняемые шаги.
         """
 
         self.dir = dir
         self.titleIndex = titleIndex
         self.filter_type = filter_type
         self.end_height = end_height
+        self.testFlag = testFlag
 
         if self.filter_type not in ('average_filter', 'median_filter'):
             print('Неправильно выбранный фильтр')
@@ -53,7 +56,8 @@ class measuring:
         self.start()
 
     def __del__(self):
-        # plt.show()
+        if self.testFlag:
+            plt.show()
         pass
 
     ##################################################
@@ -66,8 +70,29 @@ class measuring:
         for index in range(len(self.data)):
             self.data[index] = self.integration(self.coordinates[index], self.data[index])
 
+        if self.testFlag:
+
+            self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные', label=self.files)
+
+            self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные (приближенное начало)', label=self.files,
+                          x_points=[self.coordinates[index][0] for index in range(len(self.data))],
+                          y_points=[self.data[index][0] for index in range(len(self.data))],
+                          x_lim=(0, 60), y_lim=(-0.1, 1)
+                          )
+
+            self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные (приближенный конец)', label=self.files,
+                          x_points=[self.coordinates[index][-1] for index in range(len(self.data))],
+                          y_points=[self.data[index][-1] for index in range(len(self.data))],
+                          x_lim=(0, 60), y_lim=(-0.1, 1)
+                          )
+
+        self.filling_beginning()
+        exit(10)
+        self.filling_ending()
+
         for fileIndex in range(len(self.files)):
             plt.plot(self.coordinates[fileIndex], self.data[fileIndex], label=self.files[fileIndex])
+
         plt.grid()
         plt.legend()
         plt.show()
@@ -75,8 +100,6 @@ class measuring:
 
         self.get_common_marked_coordinates()
         # pprint(self.marked_coordinates)
-
-
 
         # Сведём графики вертикального профиля в последней точке
         for index in range(len(self.data)):
@@ -196,19 +219,110 @@ class measuring:
             self.coordinates[fileIndex] = coord_array
             self.data[fileIndex] = file_data_array
 
-            plt.plot(self.coordinates[fileIndex], self.data[fileIndex], label=self.files[fileIndex])
-            plt.scatter(self.coordinates[fileIndex][-1], self.data[fileIndex][-1], zorder=10, edgecolor="black")
-
-        plt.grid()
-        plt.legend()
-        plt.title("Изначальные данные")
-        plt.show()
-
-        self.filling_beginning()
-        self.filling_ending()
+    ############# Дополнение данных до общего начала и общего конца #############
 
     def filling_beginning(self):
-        pass
+        """
+        Заполнение данных до минимальной координаты, если файл записан не полностью.
+        Например, есть три файла, записанные с 0, 10, 15 метров до 200 метров соответственно.
+        Тогда по выполнению данной функции все три файла будут заполнены от 0 до 200 метров таким образом:
+        1. К данным со второго файла прибавляется величина из первого, соответсвующая начальной координате второго файла
+           (т.о. график данных со второго файла поднимется и совпадёт с первым в точке начала отсчёта второго файла)
+        2. Данные второго файла дополняются до 0 метров значениями первого
+        3. К данным третьего файла прибавляется величина, равная среднему значению величин первого и второго файлов в координате, соответствующей началу отсчёта третьего файла.
+        4. Данные третьего файла дополняются до 0 метров средними значениями первого и второго в диапазоне от 0 м до 15 м
+
+        Аналогично с любым количеством файлов.
+
+        Важно!  Если данные в файле записаны от 100 метров (больше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
+        """
+        max_coordinate = np.max([self.coordinates[fileIndex][-1] for fileIndex in range(len(self.files))])
+
+        for fileIndex in range(len(self.files)):
+            # Удалим данные с файлов, которые записаны меньше чем на половине всего пути
+            lower_bound = self.coordinates[fileIndex][0]    # Минимальная координата в self.coordinates[fileIndex]
+            if lower_bound > (max_coordinate / 2):
+                print(f"Файл {self.files[fileIndex]} является нерепрезентативным, поэтому он не будет анализироваться")
+                self.files.pop(fileIndex)
+                self.data.pop(fileIndex)
+                self.coordinates.pop(fileIndex)
+                self.marked_coordinates.pop(fileIndex)
+
+        data = []    # Создадим список, в который скопируем self.data, чтобы в ходе выполнения self.data не изменился
+        for fileIndex in range(len(self.files)):
+            data.append(deepcopy(self.data[fileIndex]))
+
+        middle_coordinate = ((max_coordinate / 2) // self.step) * self.step     # Выберем середину так, чтобы middle_coordinate была "кратна" self.step (тк мы работаем с
+                                                                                # float, то остаток будет порядка 1e-14, поэтому говорить о "кратности" не совсем корректно).
+
+        lengths = []     # Список длин элементов data после обрезки
+        for fileIndex in range(len(data)):
+            data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
+            # Обрежем data[fileIndex], до того индекса, при котором self.coordinates[fileIndex] ближе всего к middle_coordinate
+            # ([0][0] необходимо из-за особенности объекта, возвращаемого np.where())
+            lengths.append(len(data[fileIndex]))
+
+        sorted_lengths = np.unique(np.sort(lengths))        # Создадим отсортированный список длин элементов data
+        # Продолжая пример из описания метода (без учёта обрезания), sorted_lengths = [185, 190, 200]
+
+        reference_arraysIndex = []                          # Список индексов опорных массивов на различных участках заполнения
+
+        for index in range(len(sorted_lengths)):            # Начинаем не с первого элемента, тк массивы длиной sorted_lengths[0] не будут опорными
+            reference_arrayIndex = []                       # Список индексов опорных массивов на определённом участке заполнения
+            for dataIndex in range(len(data)):
+                if len(data[dataIndex]) >= sorted_lengths[index]:
+                    reference_arrayIndex.append(dataIndex)
+
+            reference_arraysIndex.append(reference_arrayIndex)
+
+        # reference_arraysIndex.reverse()      # Развернём список т.к. самый длинный массив будет опорным на первом участке, а не на последнем (в отличие от self.filling_end)
+
+        for lengthIndex in range(len(sorted_lengths) - 2, -1, -1):      # Пройдёмся по всем элементам sorted_lengths с конца кроме последнего
+            for dataIndex in range(len(data)):
+                if len(data[dataIndex]) == sorted_lengths[lengthIndex]:
+                    # Мы проходимся по sorted_lengths с конца, чтобы сдвинуть массив предпоследний по длине, опираясь только на самый длинный массив.
+                    # А двигать третий с конца по длине массив, опираясь только на последний и предпоследний по длине.
+
+                    supportive_arraysIndex = []                         # Список индексов массивов с длиной больше sorted_lengths[lengthIndex]
+                    supportive_length = []                              # Список длин массивов с длиной больше sorted_lengths[lengthIndex]
+                    for supportive_dataIndex in range(len(data)):
+                        if len(data[supportive_dataIndex]) > sorted_lengths[lengthIndex]:
+                            supportive_arraysIndex.append(supportive_dataIndex)
+                            supportive_length.append(len(data[supportive_dataIndex]))
+
+                    self.data[dataIndex] += np.mean([self.data[index][supportive_length[index] - len(data[dataIndex])] for index in supportive_arraysIndex])
+
+        # Заново скопируем self.data в data и обрежем
+        data = []
+        for fileIndex in range(len(self.files)):
+            data.append(deepcopy(self.data[fileIndex]))
+
+        for fileIndex in range(len(data)):
+            data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
+
+        for index in range(len(reference_arraysIndex)):
+            for dataIndex in range(len(data)):
+                if dataIndex not in reference_arraysIndex[index]:
+                    data[dataIndex] = self.adding_data_from_beginning(data[dataIndex], [data[referenceIndex] for referenceIndex in reference_arraysIndex[index]])
+
+        self.charting(self.coordinates[0][:len(data[0])], data, x_lim=(0, 40), y_lim=(-0.1, 0.5))
+
+    @staticmethod
+    def adding_data_from_beginning(array, reference_arrays):
+        """
+        Добавление данных к array в начало до максимальной точки отсчёта из всех данных в reference_arrays.
+        :param array: массив, к которому добавляются данные.
+        :param reference_arrays: список массивов на данные из которых основывается заполнение array.
+        :return: дополненный array.
+        """
+        array_startIndex = [len(reference_arrays[index]) - len(array) - 1 for index in range(len(reference_arrays))]
+        min_index = np.min(array_startIndex)
+        while min_index >= 0:
+            array = np.append(np.mean([reference_arrays[index][array_startIndex[index] - (np.min(array_startIndex) - min_index)]
+                                       for index in range(len(reference_arrays))]), array)
+            min_index -= 1
+
+        return array
 
     def filling_ending(self):
         """
@@ -220,10 +334,9 @@ class measuring:
 
         Аналогично с любым количеством файлов.
 
-        Важно!  Если данные в файле записаны до 95 метров (меньше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
+        Важно!  Если данные в файле записаны до 100 метров (меньше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
         """
         max_coordinate = np.max([self.coordinates[fileIndex][-1] for fileIndex in range(len(self.files))])
-        # Тк в файлах *_out.csv координаты идут по возрастанию, а в *_in.csv по убыванию
 
         for fileIndex in range(len(self.files)):
             # Удалим данные с файлов, которые записаны меньше чем на половине всего пути
@@ -241,7 +354,6 @@ class measuring:
 
         middle_coordinate = ((max_coordinate / 2) // self.step) * self.step     # Выберем середину так, чтобы middle_coordinate была "кратна" self.step (тк мы работаем с
                                                                                 # float, то остаток будет порядка 1e-14, поэтому говорить о "кратности" не совсем корректно).
-
         lengths = []     # Список длин элементов data после обрезки
         for fileIndex in range(len(data)):
             data[fileIndex] = data[fileIndex][np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]:]
@@ -249,8 +361,12 @@ class measuring:
             # ([0][0] необходимо из-за особенности объекта, возвращаемого np.where())
             lengths.append(len(data[fileIndex]))
 
+        print('Было изначально')
+        for fileIndex in range(len(self.files)):
+            print(f'len(data[fileIndex]) ---> {len(data[fileIndex])}')
+
         sorted_lengths = np.unique(np.sort(lengths))        # Создадим отсортированный список длин элементов data
-                                                            # Продолжая пример из описания метода (без учёта обрезания), sorted_lengths = [160, 175, 200]
+        # Продолжая пример из описания метода (без учёта обрезания), sorted_lengths = [160, 175, 200]
 
         reference_arraysIndex = []                          # Список индексов опорных массивов на различных участках заполнения
 
@@ -273,25 +389,32 @@ class measuring:
         for index in range(len(reference_arraysIndex)):
             for dataIndex in range(len(data)):
                 if dataIndex not in reference_arraysIndex[index]:
-                    data[dataIndex] = self.filling_data(data[dataIndex],
-                                                        [data[referenceIndex][sorted_lengths[index] - 1:sorted_lengths[index+1]]
-                                                                             for referenceIndex in reference_arraysIndex[index]])
+                    data[dataIndex] = self.adding_data_from_end(data[dataIndex],
+                                                                [data[referenceIndex][sorted_lengths[index] - 1: sorted_lengths[index+1]]
+                                                                 for referenceIndex in reference_arraysIndex[index]])
 
+        print('\nСтало')
         for fileIndex in range(len(self.files)):
-            self.data[fileIndex] = np.append(self.data[fileIndex], data[fileIndex][:lengths[fileIndex]])
+            self.data[fileIndex] = np.append(self.data[fileIndex], data[fileIndex][lengths[fileIndex]:])
             self.coordinates[fileIndex] = np.append(self.coordinates[fileIndex], np.arange(self.coordinates[fileIndex][-1], max_coordinate + self.step, self.step))
+            print(f'len(self.data[fileIndex]) ---> {len(self.data[fileIndex])}      len(data[fileIndex]) ---> {len(data[fileIndex])}'
+                  f'        len(data[fileIndex][lengths[fileIndex] - 1:]) ---> {len(data[fileIndex][lengths[fileIndex]:])}      len(self.coordinates[fileIndex]) ---> {len(self.coordinates[fileIndex])}')
 
     @staticmethod
-    def filling_data(array, reference_arrays, reverse=False):
+    def adding_data_from_end(array, reference_arrays, reverse=False):
         """
-        Добавление к array средних значений reference_arrays в каждой точке.
+        Добавление в конец array средних значений reference_arrays в каждой точке.
 
-        !!! Напоминание !!! Реализовать использование reverse, чтобы эту же функцию можно было использовать и для filling_beginning.
         :param array: массив, к которому будут добавлены данные.
         :param reference_arrays: массивы, данные из которых будут использованы при добавлении к array.
-        :param reverse: флаг разворота файлов. Если True, то данные из всех массивов будут развёрнуты.
+        :param reverse: флаг, сообщающий необходимо ли разворачивать array и reference_arrays.
         :return: дополненный array
         """
+
+        if reverse:
+            array = np.flip(array)
+            for index in range(len(reference_arrays)):
+                reference_arrays[index] = np.flip(reference_arrays[index])
 
         # ordIndex (ordinal index) - порядковый индекс
         shift = np.mean([reference_arrays[ordIndex][0] for ordIndex in range(len(reference_arrays))]) - array[0]
@@ -387,22 +510,31 @@ class measuring:
 
     ############# Построение графиков ###############
 
-    def charting(self, x_axis, y_axis, title=None, label=None, linewidth: int = 2, saved_name=None, annotation=None):
+    def charting(self, x_axis, y_axis,  x_axis1D=True, title=None, label=None, linewidth: int = 2,
+                 x_points=None, y_points=None, x_lim=None, y_lim=None, annotation=None, saved_name=None):
         """
         Построение графиков по величинам x_axis и y_axis
 
-        :param x_axis: Данные для оси Х, представленные в виде одномерного списка/массива.
+        :param x_axis: Данные для оси Х.
         :param y_axis: Данные для оси У, представленные в виде многомерного списка/массива.
                        Поэтому одномерные данные необходимо передавать в виде кортежа или списка.
                        Пример: (array, ).
+        :param x_axis1D: Флаг, означающий многомерность или одномерность x_axis.
+                         True ---> x_axis - одномерный.
+                         False ---> x_axis - многомерный.
+                         ВАЖНО!!! Если x_axis многомерный, то его размерность должна совпадать с размерностью y_axis.
         :param title: Название графика.
         :param label: Многомерный список подписей, которые будут добавлены на график к каждому элементу y_axis.
                       Поэтому если y_axis - одномерный список/массив, то label необходимо передавать так же как и y_axis
                       в виде кортежа или списка.
                       Если label не указан, то подписи не будут нанесены на график.
         :param linewidth: Толщина линий на графике.
-        :param saved_name: Имя, с которым график будет сохранён в папке self.dir/Стягивание/Графики. Если оно не указано, то график сохранён не будет.
+        :param x_points: Дополнительные абсциссы точек, которые необходимо нанести на график с помощью scatter.
+        :param y_points: Дополнительные ординаты точек, которые необходимо нанести на график с помощью scatter.
+        :param x_lim: Границы обзора по оси x.
+        :param y_lim: Границы обзора по оси y.
         :param annotation: Дополнительный текст, который будет добавлен на график в рамке.
+        :param saved_name: Имя, с которым график будет сохранён в папке self.dir/Стягивание/Графики. Если оно не указано, то график сохранён не будет.
         """
 
         fig, ax = plt.subplots(tight_layout=True)
@@ -410,18 +542,34 @@ class measuring:
         fig.set_figheight(9)
         fig.set_figwidth(16)
 
-        for index in range(len(y_axis)):
-            if label:
-                ax.plot(x_axis, y_axis[index] * 1000, label=label[index], linewidth=linewidth)
-                ax.legend()
-            else:
-                ax.plot(x_axis, y_axis[index] * 1000, linewidth=linewidth)
+        if x_axis1D:
+            for index in range(len(y_axis)):
+                if label:
+                    ax.plot(x_axis, y_axis[index] * 1000, label=label[index], linewidth=linewidth)
+                    ax.legend()
+                else:
+                    ax.plot(x_axis, y_axis[index] * 1000, linewidth=linewidth)
+
+        else:
+            for index in range(len(y_axis)):
+                if label:
+                    ax.plot(x_axis[index], y_axis[index] * 1000, label=label[index], linewidth=linewidth)
+                    ax.legend()
+                else:
+                    ax.plot(x_axis[index], y_axis[index] * 1000, linewidth=linewidth)
 
         ax.grid()
 
         ax.set_title(title, weight='bold', fontsize=16)
         ax.set_xlabel('Пройденный путь, м')
         ax.set_ylabel('Перепад высот, мм')
+
+        if x_points and y_points:
+            ax.scatter(x_points, y_points, zorder=10, edgecolor="black")
+
+        if x_lim and y_lim:
+            ax.set_xlim(x_lim)
+            ax.set_ylim(y_lim)
 
         if annotation:
             ax.annotate(annotation, xy=(0.6, 0.9), xycoords='axes fraction', size=14,
@@ -436,7 +584,7 @@ class measuring:
 
             fig.savefig(f'{self.dir}/Стяжка/Графики/{saved_name}.png')
 
-            ############# Интегрирование #############
+    ############# Интегрирование #############
 
     @staticmethod
     def integration(x_value, y_value):
@@ -548,5 +696,5 @@ class measuring:
 # measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)                    # 7 - номер столбца с Креном
 
 self_dir = './CSV files/17.07.24'                                                                             # Директория в которой будет работать стягивание данных
-measuring(self_dir, 7, 'average_filter', 1.2)                    # 7 - номер столбца с Креном
+measuring(self_dir, 7, 'average_filter', 1.2, testFlag=True)                    # 7 - номер столбца с Креном
 
