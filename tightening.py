@@ -53,11 +53,6 @@ class measuring:
 
         self.start()
 
-    def __del__(self):
-        if self.testFlag:
-            plt.show()
-        pass
-
     ##################################################
 
     def start(self):
@@ -71,13 +66,14 @@ class measuring:
         if self.testFlag:
             self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные вертикального профиля', label=self.files,
                           x_points=[self.coordinates[index][0] for index in range(len(self.data))],
-                          y_points=[self.data[index][0] for index in range(len(self.data))])
+                          y_points=[self.data[index][0] for index in range(len(self.data))], saved_name='Изначальные данные', saved_dir="Тестировочный режим")
 
         # Сведём графики в последней точке
         self.fitting_to_finalHeight()
 
         if self.testFlag:
-            self.charting(self.coordinates, self.data, x_axis1D=False, title='Сведённые данные вертикального профиля в последней точке', linewidth=2.5)
+            self.charting(self.coordinates, self.data, x_axis1D=False, title='Сведённые данные вертикального профиля в последней точке', linewidth=2.5,
+                          saved_name='Сведённые данные в последней точке', saved_dir="Тестировочный режим")
 
         self.filling_beginning()
         self.filling_ending()
@@ -105,11 +101,6 @@ class measuring:
                       )
 
         self.get_common_marked_coordinates()
-
-        for markedIndex in range(len(self.marked_coordinates)):
-            index = np.where(np.isclose(self.coordinates, self.marked_coordinates[markedIndex], atol=self.step / 2))[0][0]
-
-        # pprint(self.marked_coordinates)
         self.tightening()
 
         # Заполним массив СКО
@@ -523,7 +514,8 @@ class measuring:
     ############# Построение графиков ###############
 
     def charting(self, x_axis, y_axis,  x_axis1D=True, title=None, label=None, linewidth: int = 2,
-                 x_points=None, y_points=None, annotation=None, saved_name=None):
+                 x_points=None, y_points=None, annotation=None, saved_name=None, saved_dir='Графики'):
+
         """
         Построение графиков по величинам x_axis и y_axis
 
@@ -545,8 +537,8 @@ class measuring:
         :param y_points: Дополнительные ординаты точек, которые необходимо нанести на график с помощью scatter.
         :param annotation: Дополнительный текст, который будет добавлен на график в рамке.
         :param saved_name: Имя, с которым график будет сохранён в папке self.dir/Стягивание/Графики. Если оно не указано, то график сохранён не будет.
+        :param saved_dir: Папка внутри self.dir/Стяжка в которой будет сохранён график.
         """
-
         fig, ax = plt.subplots(tight_layout=True)
 
         fig.set_figheight(9)
@@ -586,10 +578,10 @@ class measuring:
             if not os.path.exists(self.dir + "/Стяжка"):
                 os.mkdir(self.dir + "/Стяжка")
 
-            if not os.path.exists(self.dir + "/Стяжка/Графики"):
-                os.mkdir(self.dir + "/Стяжка/Графики")
+            if not os.path.exists(self.dir + f"/Стяжка/{saved_dir}"):
+                os.mkdir(self.dir + f"/Стяжка/{saved_dir}")
 
-            fig.savefig(f'{self.dir}/Стяжка/Графики/{saved_name}.png')
+            fig.savefig(f'{self.dir}/Стяжка/{saved_dir}/{saved_name}.png')
 
     ############# Интегрирование #############
 
