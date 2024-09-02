@@ -66,7 +66,8 @@ class measuring:
         if self.testFlag:
             self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные вертикального профиля', label=self.files,
                           x_points=[self.coordinates[index][0] for index in range(len(self.data))],
-                          y_points=[self.data[index][0] for index in range(len(self.data))], saved_name='Изначальные данные', saved_dir="Тестировочный режим")
+                          y_points=[self.data[index][0] for index in range(len(self.data))],
+                          saved_name='Изначальные данные', saved_dir="Тестировочный режим")
 
         # Сведём графики в последней точке
         self.fitting_to_finalHeight()
@@ -697,5 +698,5 @@ parser.add_argument("-tm", "--test_mode", type=bool, default=False,
                          ' ---> True  (1) - включён'
                          ' ---> False (0) - выключен (значение по умолчанию)')
 
-self_dir = './'                                                                             # Директория в которой будет работать стягивание данных
-measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)                    # 7 - номер столбца с Креном
+self_dir = './CSV files/17.07.24'                                                           # Директория в которой будет работать стягивание данных
+measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height, parser.parse_args().test_mode)                    # 7 - номер столбца с Креном
