@@ -140,7 +140,7 @@ class measuring:
         self.charting(self.coordinates, self.data,
                       linewidth=2.5,
                       label=self.files,
-                      title=f'{"Курс" if self.titleIndex == 6 else "Вертикальный профиль"}, сведённый в последней точке по продолженным данным',
+                      title=f'Исходные данные для {"курса" if self.titleIndex == 6 else "вертикального профиль"}',
                       saved_name=f'Сырой {"курс" if self.titleIndex == 6 else "вертикальный профиль"}'
                       )
 
@@ -148,6 +148,12 @@ class measuring:
         bar.next()
 
         self.tightening()
+
+        self.charting(self.coordinates, self.data,
+                      label=self.files,
+                      title=f'Сведённый {"курс" if self.titleIndex == 6 else "вертикальный профиль"}',
+                      saved_name=f'Сведённый {"курс" if self.titleIndex == 6 else "вертикальный профиль"}')
+
         bar.next()
 
         # Заполним массив СКО
@@ -163,6 +169,7 @@ class measuring:
 
         self.writing_to_CSV_file()
         bar.next()
+        print('\nУспешное завершение программы\n')
 
     ############# Получение списка файлов #############
 
@@ -317,7 +324,7 @@ class measuring:
 
         middle_coordinate = ((max_coordinate / 2) // self.step) * self.step     # Выберем середину так, чтобы middle_coordinate была "кратна" self.step (тк мы работаем с
                                                                                 # float, то остаток будет порядка 1e-14, поэтому говорить о "кратности" не совсем корректно).
-
+                                                                                # Поэтому будем использовать np.isclose.
         lengths = []     # Список длин элементов data после обрезки
         for fileIndex in range(len(data)):
             data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
@@ -338,12 +345,19 @@ class measuring:
 
             reference_arraysIndex.append(reference_arrayIndex)
 
-        # reference_arraysIndex.reverse()      # Развернём список т.к. самый длинный массив будет опорным на первом участке, а не на последнем (в отличие от self.filling_end)
+        # print('\n')
+        # for dataIndex in range(len(data)):
+        #     print(f'len(data[dataIndex]) = {len(data[dataIndex])}')
+        # print()
+        # print(f'sorted_lengths = {sorted_lengths}')
 
-        # Если работаем с креном, то необходимо поднять графики, тк крен интегрируем, а курс нет.
-        # Соответственно, интегрированный крен начинается с нуля, а курс нет.
-        if self.titleIndex == 7:
+        # Если работаем с креном (тангажем), то необходимо поднять графики, тк крен (тангаж) интегрируем, а курс нет.
+        # Соответственно, интегрированный крен (тангаж) начинается с нуля, а курс нет.
+        if self.titleIndex == 7 or self.titleIndex == 8:
             for lengthIndex in range(len(sorted_lengths) - 2, -1, -1):      # Пройдёмся по всем элементам sorted_lengths с конца кроме последнего
+                # print()
+                # print('------------------------------------')
+                # print(f'sorted_lengths[lengthIndex] = {sorted_lengths[lengthIndex]}')
                 for dataIndex in range(len(data)):
                     if len(data[dataIndex]) == sorted_lengths[lengthIndex]:
                         # Мы проходимся по sorted_lengths с конца, чтобы сдвинуть массив предпоследний по длине, опираясь только на самый длинный массив.
@@ -356,7 +370,15 @@ class measuring:
                                 supportive_arraysIndex.append(supportive_dataIndex)
                                 supportive_length.append(len(data[supportive_dataIndex]))
 
-                        self.data[dataIndex] += np.mean([self.data[index][supportive_length[index] - len(data[dataIndex])] for index in supportive_arraysIndex])
+                        # print()
+                        # print(f'supportive_arraysIndex = {supportive_arraysIndex}')
+                        # print(f'supportive_length = {supportive_length}')
+                        # print(f'dataIndex = {dataIndex}')
+
+                        self.data[dataIndex] += np.mean([self.data[index][supportive_length[supportive_arraysIndex.index(index)]
+                                                                          - len(data[dataIndex])] for index in supportive_arraysIndex])
+                        # Используем supportive_arraysIndex.index(index), чтобы найти длину массива в соответствии с его индексом в data,
+                        # а не порядковым индексом в supportive_arraysIndex
 
             # Заново скопируем self.data в data и обрежем
             data = []
@@ -570,7 +592,7 @@ class measuring:
 
     ############# Построение графиков ###############
 
-    def charting(self, x_axis, y_axis,  x_axis1D=True, title=None, label=None, linewidth: int = 2,
+    def charting(self, x_axis, y_axis, x_axis1D=True, title=None, label=None, linewidth: int = 2, x_label='Пройденный путь, м', y_label=None,
                  x_points=None, y_points=None, annotation=None, saved_name=None):
 
         """
@@ -590,6 +612,8 @@ class measuring:
                       в виде кортежа или списка.
                       Если label не указан, то подписи не будут нанесены на график.
         :param linewidth: Толщина линий на графике.
+        :param x_label: Подпись к оси абсцисс.
+        :param y_label: Подпись к оси ординат.
         :param x_points: Дополнительные абсциссы точек, которые необходимо нанести на график с помощью scatter.
         :param y_points: Дополнительные ординаты точек, которые необходимо нанести на график с помощью scatter.
         :param annotation: Дополнительный текст, который будет добавлен на график в рамке.
@@ -619,8 +643,8 @@ class measuring:
         ax.grid()
 
         ax.set_title(title, weight='bold', fontsize=16)
-        ax.set_xlabel('Пройденный путь, м')
-        ax.set_ylabel('Перепад высот, мм')
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(f'{"" if self.titleIndex == 6 else "Перепад высот, мм"}')
 
         if x_points and y_points:
             for index in range(len(x_points)):
@@ -691,11 +715,6 @@ class measuring:
             line_coefficients = (self.data[dataIndex][-1] - self.end_height) / (self.coordinates[-1] - self.coordinates[previous_index])
             for i in range(previous_index, len(self.coordinates)):
                 self.data[dataIndex][i] -= line_coefficients * (self.coordinates[i] - self.coordinates[previous_index])
-
-        self.charting(self.coordinates, self.data,
-                      label=self.files,
-                      title='Сведённый вертикальный профиль',
-                      saved_name="Сведённый профиль")
 
     ############# Сохранение данных в CSV файл #############
 
@@ -791,7 +810,7 @@ parser.add_argument("--gyroscope_rotation", type=bool, default=True,
 ############# Установление данных по умолчанию #############
 
 
-self_dir = './'       # Директория в которой будет работать стягивание данных
+self_dir = './'       # Директория в которой будет работать стягивание данных/
 
 # Заголовок, который автоматически создаётся в CSV файлах
 titles = ["Путь", "Время,mc", "Скорость", "Отметка", "Шаблон", "Статус", "Курс", "Крен", "Тангаж", "Vn", "Ve", "Vh", "Широта", "Долгота", "Высота", "Ax", "Ay", "Az"]
