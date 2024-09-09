@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from copy import deepcopy
+from progress.bar import ChargingBar
 
 
 class measuring:
@@ -12,7 +13,7 @@ class measuring:
         """
         Класс, предназначенный для "стягивания" графиков в определённых точка
 
-        :param dir: Директория расположения CSV файлов, относительно расположения программы.
+        :param dir: Директория расположения сохранённых файлов, относительно расположения программы.
         :param titleIndex: Величина, по которой будет происходить "стяжка"
         :param filter_type: Используемый фильтр.
                             Возможные варианты: average_filter - фильтр усреднения,
@@ -22,25 +23,50 @@ class measuring:
                          будут появляться вспомогательные изображения, поясняющие выполняемые шаги.
         """
 
+        print(f'Построение {"вертикального профиля" if (titleIndex == 7 or titleIndex == 8) else "горизонтального плана"}')
+
         self.dir = dir
         self.titleIndex = titleIndex
         self.filter_type = filter_type
         self.end_height = end_height
         self.testFlag = testFlag
 
-        if self.filter_type not in ('average_filter', 'median_filter'):
-            print('Неправильно выбранный фильтр')
-            exit(1)
-
         # Функции используемого фильтра
         self.filters = {'average_filter': self.average_filter,
                         'median_filter': self.median_filter}
 
         # Информация для построения графиков
-        self.chart_info = {'average_filter': {'Заголовок': 'СКО, полученное усреднением',
-                                              'Имя файла': 'СКО_усреднение'},
-                           'median_filter': {'Заголовок': 'СКО, полученное медианным фильтром',
-                                             'Имя файла': 'СКО_медианный фильтр'}}
+        self.chart_info = {'6': {'average_filter': {'Заголовок': 'СКО плана, полученное усреднением',
+                                                    'Имя файла': 'СКО плана_усреднение'},
+                                 'median_filter': {'Заголовок': 'СКО плана, полученное медианным фильтром',
+                                                   'Имя файла': 'СКО плана_медианный фильтр'}
+                                 },
+
+                           '7': {'average_filter': {'Заголовок': 'СКО вертикального профиля, полученное усреднением',
+                                                    'Имя файла': 'СКО вертикального профиля_усреднение'},
+                                 'median_filter': {'Заголовок': 'СКО вертикального профиля, полученное медианным фильтром',
+                                                   'Имя файла': 'СКО вертикального профиля_медианный фильтр'}
+                                 },
+
+                           '8': {'average_filter': {'Заголовок': 'СКО вертикального профиля, полученное усреднением',
+                                                    'Имя файла': 'СКО вертикального профиля_усреднение'},
+                                 'median_filter': {'Заголовок': 'СКО вертикального профиля, полученное медианным фильтром',
+                                                   'Имя файла': 'СКО вертикального профиля_медианный фильтр'}
+                                 }
+                           }
+
+        self.file_namesInfo = {'6': {'average_filter': 'Сведённый план_усреднение.csv',
+                                     'median_filter': 'Сведённый план_медианный фильтр.csv'
+                                     },
+
+                               '7': {'average_filter': 'Сведённый профиль_усреднение.csv',
+                                     'median_filter': 'Сведённый профиль_медианный фильтр.csv'
+                                     },
+
+                               '8': {'average_filter': 'Сведённый профиль_усреднение.csv',
+                                     'median_filter': 'Сведённый профиль_медианный фильтр.csv'
+                                     }
+                               }
 
         self.files = self.get_files()       # Список CSV файлов
         self.data = []                      # Список данных величины titleIndex, прочитанный из files
@@ -50,37 +76,46 @@ class measuring:
         self.std_array = np.ndarray         # Массив среднеквадратичных отклонений
 
         self.step = 0.22553                 # Шаг с которым будет проводиться интерполяция
-
         self.start()
-
-    def __del__(self):
-        if self.testFlag:
-            plt.show()
-        pass
 
     ##################################################
 
     def start(self):
+        bar = ChargingBar('Выполнение программы: ', max=10)    # Шкала выполнения
+
         self.reading_values()
+        bar.next()
+
         self.interpolation()
+        bar.next()
+        bar.next()
 
-        # Проинтегрируем self.data
-        for index in range(len(self.data)):
-            self.data[index] = self.integration(self.coordinates[index], self.data[index])
+        # Проинтегрируем self.data, если это крен или тангаж (исходные данные для вертикального профиля)
+        if self.titleIndex == 7 or self.titleIndex == 8:
+            for index in range(len(self.data)):
+                self.data[index] = self.integration(self.coordinates[index], self.data[index])
 
-        if self.testFlag:
-            self.charting(self.coordinates, self.data, x_axis1D=False, title='Изначальные данные вертикального профиля', label=self.files,
-                          x_points=[self.coordinates[index][0] for index in range(len(self.data))],
-                          y_points=[self.data[index][0] for index in range(len(self.data))])
-
-        # Сведём графики в последней точке
-        self.fitting_to_finalHeight()
+        bar.next()
 
         if self.testFlag:
-            self.charting(self.coordinates, self.data, x_axis1D=False, title='Сведённые данные вертикального профиля в последней точке', linewidth=2.5)
+            self.charting(self.coordinates, self.data, x_axis1D=False, title=f'Изначальные данные {"курса" if self.titleIndex == 6 else "вертикального профиля"}',
+                          label=self.files,
+                          saved_name='Изначальные данные')
+
+        # Сведём графики вертикального профиля в последней точке
+        if self.titleIndex == 7 or self.titleIndex == 8:
+            self.fitting_to_finalHeight()
+            if self.testFlag:
+                self.charting(self.coordinates, self.data, x_axis1D=False,
+                              title=f'Сведённые данные крена в последней точке', linewidth=2.5,
+                              saved_name='Сведённые данные в последней точке')
+        bar.next()
 
         self.filling_beginning()
+        bar.next()
+
         self.filling_ending()
+        bar.next()
 
         for dataIndex in range(len(self.data)):
             # Из-за особенности работы компьютера с числами с плавающей точкой может возникнуть ситуация, когда в self.coordinates[dataIndex]
@@ -94,23 +129,32 @@ class measuring:
             except IndexError:
                 pass
 
+        if self.testFlag:
+            self.charting(self.coordinates, self.data, x_axis1D=False,
+                          title=f'Продолженные данные {"курса" if self.titleIndex == 6 else "вертикального профиля"}', linewidth=2.5,
+                          saved_name='Продолженные данные')
+
         # Тк у нас все self.coordinates[index] одинаковы, то нет смысла хранить их как список, поэтому сделаем приведение типа.
         self.coordinates = self.coordinates[0]
 
         self.charting(self.coordinates, self.data,
                       linewidth=2.5,
                       label=self.files,
-                      title='Вертикальный профиль, сведённый в последней точке по продолженным данным',
-                      saved_name="Сырой профиль"
+                      title=f'Исходные данные для {"курса" if self.titleIndex == 6 else "вертикального профиль"}',
+                      saved_name=f'Сырой {"курс" if self.titleIndex == 6 else "вертикальный профиль"}'
                       )
 
         self.get_common_marked_coordinates()
+        bar.next()
 
-        for markedIndex in range(len(self.marked_coordinates)):
-            index = np.where(np.isclose(self.coordinates, self.marked_coordinates[markedIndex], atol=self.step / 2))[0][0]
-
-        # pprint(self.marked_coordinates)
         self.tightening()
+
+        self.charting(self.coordinates, self.data,
+                      label=self.files,
+                      title=f'Сведённый {"курс" if self.titleIndex == 6 else "вертикальный профиль"}',
+                      saved_name=f'Сведённый {"курс" if self.titleIndex == 6 else "вертикальный профиль"}')
+
+        bar.next()
 
         # Заполним массив СКО
         self.std_array = np.array([np.std([self.data[dataIndex][index] for dataIndex in range(len(self.data))]) for index in range(len(self.coordinates))])
@@ -118,12 +162,14 @@ class measuring:
         self.charting(self.coordinates,
                       (self.std_array, ),
                       linewidth=3,
-                      title=self.chart_info[self.filter_type]['Заголовок'],
-                      saved_name=self.chart_info[self.filter_type]['Имя файла'],
+                      title=self.chart_info[str(self.titleIndex)][self.filter_type]['Заголовок'],
+                      saved_name=self.chart_info[str(self.titleIndex)][self.filter_type]['Имя файла'],
                       annotation=f'Количество файлов - {len(self.files)}\nКоличество точек сведения - {len(self.marked_coordinates)}'
                       )
 
         self.writing_to_CSV_file()
+        bar.next()
+        print('\nУспешное завершение программы\n')
 
     ############# Получение списка файлов #############
 
@@ -219,6 +265,7 @@ class measuring:
     ############# Подгон графиков к конечной высоте ##############
 
     def fitting_to_finalHeight(self):
+        # Найдём файл с данными, записанными до максимальной координаты
         max_coordinates = []
         for dataIndex in range(len(self.data)):
             max_coordinates.append(self.coordinates[dataIndex][-1])
@@ -226,10 +273,13 @@ class measuring:
 
         for dataIndex in range(len(self.data)):
             if self.data[dataIndex][-1] == max_length:
+                # Опустим график самого длинного файла
                 line_coefficient = (self.data[dataIndex][-1] - self.end_height) / self.coordinates[dataIndex][-1]
                 for i in range(len(self.data[dataIndex])):
                     self.data[dataIndex][i] -= line_coefficient * (self.coordinates[dataIndex][i] - self.coordinates[dataIndex][0])
             else:
+                # Тк в файлах меньшей длины нет данных, соответствующих максимальной координате, то опустим данные в таких фалах так,
+                # чтобы на одной линии лежали точки (0, 0), (self.coordinate[index][-1], self.data[index][-1]), (max_length, self.end_height)
                 k = self.data[dataIndex][-1] / self.coordinates[dataIndex][-1]
                 end_fitting_data = k * max_length
                 line_coefficient = (end_fitting_data - self.end_height) / max_length
@@ -243,12 +293,14 @@ class measuring:
         Заполнение данных до минимальной координаты, если файл записан не полностью.
         Например, есть три файла, записанные с 0, 10, 15 метров до 200 метров соответственно.
         Тогда по выполнению данной функции все три файла будут заполнены от 0 до 200 метров таким образом:
-        1. К данным со второго файла прибавляется величина из первого, соответсвующая начальной координате второго файла
-           (т.о. график данных со второго файла поднимется и совпадёт с первым в точке начала отсчёта второго файла)
-        2. Данные второго файла дополняются до 0 метров значениями первого
-        3. К данным третьего файла прибавляется величина, равная среднему значению величин первого и второго файлов в координате, соответствующей началу отсчёта третьего файла.
-        4. Данные третьего файла дополняются до 0 метров средними значениями первого и второго в диапазоне от 0 м до 15 м
-
+        Для крена:
+            1. К данным со второго файла прибавляется величина из первого, соответсвующая начальной координате второго файла
+               (т.о. график данных со второго файла поднимется и совпадёт с первым в точке начала отсчёта второго файла)
+            2. Данные второго файла дополняются до 0 метров значениями первого
+            3. К данным третьего файла прибавляется величина, равная среднему значению величин первого и второго файлов в координате, соответствующей началу отсчёта третьего файла.
+            4. Данные третьего файла дополняются до 0 метров средними значениями первого и второго в диапазоне от 0 м до 15 м
+        Для курса:
+               Аналогично крену, но без 1-го пункта.
         Аналогично с любым количеством файлов.
 
         Важно!  Если данные в файле записаны от 100 метров (больше половины максимальной длины), то такой файл считается нерепрезентативны и удаляется.
@@ -272,7 +324,7 @@ class measuring:
 
         middle_coordinate = ((max_coordinate / 2) // self.step) * self.step     # Выберем середину так, чтобы middle_coordinate была "кратна" self.step (тк мы работаем с
                                                                                 # float, то остаток будет порядка 1e-14, поэтому говорить о "кратности" не совсем корректно).
-
+                                                                                # Поэтому будем использовать np.isclose.
         lengths = []     # Список длин элементов data после обрезки
         for fileIndex in range(len(data)):
             data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
@@ -293,30 +345,48 @@ class measuring:
 
             reference_arraysIndex.append(reference_arrayIndex)
 
-        # reference_arraysIndex.reverse()      # Развернём список т.к. самый длинный массив будет опорным на первом участке, а не на последнем (в отличие от self.filling_end)
+        # print('\n')
+        # for dataIndex in range(len(data)):
+        #     print(f'len(data[dataIndex]) = {len(data[dataIndex])}')
+        # print()
+        # print(f'sorted_lengths = {sorted_lengths}')
 
-        for lengthIndex in range(len(sorted_lengths) - 2, -1, -1):      # Пройдёмся по всем элементам sorted_lengths с конца кроме последнего
-            for dataIndex in range(len(data)):
-                if len(data[dataIndex]) == sorted_lengths[lengthIndex]:
-                    # Мы проходимся по sorted_lengths с конца, чтобы сдвинуть массив предпоследний по длине, опираясь только на самый длинный массив.
-                    # А двигать третий с конца по длине массив, опираясь только на последний и предпоследний по длине.
+        # Если работаем с креном (тангажем), то необходимо поднять графики, тк крен (тангаж) интегрируем, а курс нет.
+        # Соответственно, интегрированный крен (тангаж) начинается с нуля, а курс нет.
+        if self.titleIndex == 7 or self.titleIndex == 8:
+            for lengthIndex in range(len(sorted_lengths) - 2, -1, -1):      # Пройдёмся по всем элементам sorted_lengths с конца кроме последнего
+                # print()
+                # print('------------------------------------')
+                # print(f'sorted_lengths[lengthIndex] = {sorted_lengths[lengthIndex]}')
+                for dataIndex in range(len(data)):
+                    if len(data[dataIndex]) == sorted_lengths[lengthIndex]:
+                        # Мы проходимся по sorted_lengths с конца, чтобы сдвинуть массив предпоследний по длине, опираясь только на самый длинный массив.
+                        # А двигать третий с конца по длине массив, опираясь только на последний и предпоследний по длине.
 
-                    supportive_arraysIndex = []                         # Список индексов массивов с длиной больше sorted_lengths[lengthIndex]
-                    supportive_length = []                              # Список длин массивов с длиной больше sorted_lengths[lengthIndex]
-                    for supportive_dataIndex in range(len(data)):
-                        if len(data[supportive_dataIndex]) > sorted_lengths[lengthIndex]:
-                            supportive_arraysIndex.append(supportive_dataIndex)
-                            supportive_length.append(len(data[supportive_dataIndex]))
+                        supportive_arraysIndex = []                         # Список индексов массивов с длиной больше sorted_lengths[lengthIndex]
+                        supportive_length = []                              # Список длин массивов с длиной больше sorted_lengths[lengthIndex]
+                        for supportive_dataIndex in range(len(data)):
+                            if len(data[supportive_dataIndex]) > sorted_lengths[lengthIndex]:
+                                supportive_arraysIndex.append(supportive_dataIndex)
+                                supportive_length.append(len(data[supportive_dataIndex]))
 
-                    self.data[dataIndex] += np.mean([self.data[index][supportive_length[index] - len(data[dataIndex])] for index in supportive_arraysIndex])
+                        # print()
+                        # print(f'supportive_arraysIndex = {supportive_arraysIndex}')
+                        # print(f'supportive_length = {supportive_length}')
+                        # print(f'dataIndex = {dataIndex}')
 
-        # Заново скопируем self.data в data и обрежем
-        data = []
-        for fileIndex in range(len(self.files)):
-            data.append(deepcopy(self.data[fileIndex]))
+                        self.data[dataIndex] += np.mean([self.data[index][supportive_length[supportive_arraysIndex.index(index)]
+                                                                          - len(data[dataIndex])] for index in supportive_arraysIndex])
+                        # Используем supportive_arraysIndex.index(index), чтобы найти длину массива в соответствии с его индексом в data,
+                        # а не порядковым индексом в supportive_arraysIndex
 
-        for fileIndex in range(len(data)):
-            data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
+            # Заново скопируем self.data в data и обрежем
+            data = []
+            for fileIndex in range(len(self.files)):
+                data.append(deepcopy(self.data[fileIndex]))
+
+            for fileIndex in range(len(data)):
+                data[fileIndex] = data[fileIndex][:np.where(np.isclose(self.coordinates[fileIndex], middle_coordinate))[0][0]]
 
         for index in range(len(reference_arraysIndex)):
             for dataIndex in range(len(data)):
@@ -522,8 +592,9 @@ class measuring:
 
     ############# Построение графиков ###############
 
-    def charting(self, x_axis, y_axis,  x_axis1D=True, title=None, label=None, linewidth: int = 2,
+    def charting(self, x_axis, y_axis, x_axis1D=True, title=None, label=None, linewidth: int = 2, x_label='Пройденный путь, м', y_label=None,
                  x_points=None, y_points=None, annotation=None, saved_name=None):
+
         """
         Построение графиков по величинам x_axis и y_axis
 
@@ -541,12 +612,13 @@ class measuring:
                       в виде кортежа или списка.
                       Если label не указан, то подписи не будут нанесены на график.
         :param linewidth: Толщина линий на графике.
+        :param x_label: Подпись к оси абсцисс.
+        :param y_label: Подпись к оси ординат.
         :param x_points: Дополнительные абсциссы точек, которые необходимо нанести на график с помощью scatter.
         :param y_points: Дополнительные ординаты точек, которые необходимо нанести на график с помощью scatter.
         :param annotation: Дополнительный текст, который будет добавлен на график в рамке.
         :param saved_name: Имя, с которым график будет сохранён в папке self.dir/Стягивание/Графики. Если оно не указано, то график сохранён не будет.
         """
-
         fig, ax = plt.subplots(tight_layout=True)
 
         fig.set_figheight(9)
@@ -571,8 +643,8 @@ class measuring:
         ax.grid()
 
         ax.set_title(title, weight='bold', fontsize=16)
-        ax.set_xlabel('Пройденный путь, м')
-        ax.set_ylabel('Перепад высот, мм')
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(f'{"" if self.titleIndex == 6 else "Перепад высот, мм"}')
 
         if x_points and y_points:
             for index in range(len(x_points)):
@@ -583,13 +655,17 @@ class measuring:
                         bbox=dict(boxstyle="round,pad=0.3", fc="lightgray", ec="gray", lw=2))
 
         if saved_name:
+            saved_dir = 'План' if self.titleIndex == 6 else 'Вертикальный профиль'
             if not os.path.exists(self.dir + "/Стяжка"):
                 os.mkdir(self.dir + "/Стяжка")
 
-            if not os.path.exists(self.dir + "/Стяжка/Графики"):
-                os.mkdir(self.dir + "/Стяжка/Графики")
+            if not os.path.exists(self.dir + f"/Стяжка/{saved_dir}"):
+                os.mkdir(self.dir + f"/Стяжка/{saved_dir}")
 
-            fig.savefig(f'{self.dir}/Стяжка/Графики/{saved_name}.png')
+            if not os.path.exists(self.dir + f"/Стяжка/{saved_dir}/Графики"):
+                os.mkdir(self.dir + f"/Стяжка/{saved_dir}/Графики")
+
+            fig.savefig(f'{self.dir}/Стяжка/{saved_dir}/Графики/{saved_name}.png')
 
     ############# Интегрирование #############
 
@@ -630,16 +706,15 @@ class measuring:
 
             previous_index = index      # Каждый раз previous_index смещается для того, чтобы наклонять не весь график, а только начиная с previous_index
 
-        # Сведём последние точки в self.end_height
+        # Сведём последние точки в self.end_height для интегрированного крена
+        # А для курса сведём в конце к среднему значению self.data[dataIndex][-1]
+        if self.titleIndex == 6:
+            self.end_height = np.mean([self.data[index][-1] for index in range(len(self.data))])
+
         for dataIndex in range(len(self.data)):
             line_coefficients = (self.data[dataIndex][-1] - self.end_height) / (self.coordinates[-1] - self.coordinates[previous_index])
             for i in range(previous_index, len(self.coordinates)):
                 self.data[dataIndex][i] -= line_coefficients * (self.coordinates[i] - self.coordinates[previous_index])
-
-        self.charting(self.coordinates, self.data,
-                      label=self.files,
-                      title='Сведённый вертикальный профиль',
-                      saved_name="Сведённый профиль")
 
     ############# Сохранение данных в CSV файл #############
 
@@ -650,9 +725,14 @@ class measuring:
         if not os.path.exists(self.dir + "/Стяжка"):
             os.mkdir(self.dir + "/Стяжка")
 
-        file_name = 'Сведённый профиль_усреднение.csv' if self.filter_type == 'average_filter' else 'Сведённый профиль_медианный фильтр.csv'
+        saved_dir = 'План' if self.titleIndex == 6 else 'Вертикальный профиль'
 
-        csv_file = open(f'{self.dir}/Стяжка/{file_name}', 'w')
+        if not os.path.exists(self.dir + f"/Стяжка/{saved_dir}"):
+            os.mkdir(self.dir + f"/Стяжка/{saved_dir}")
+
+        file_name = self.file_namesInfo[str(self.titleIndex)][self.filter_type]
+
+        csv_file = open(f'{self.dir}/Стяжка/{saved_dir}/{file_name}', 'w')
 
         # Напишем первую стоку
         csv_file.write('Путь')
@@ -693,17 +773,62 @@ class measuring:
     #################################
 
 
-parser = argparse.ArgumentParser()                                                          # Создадим парсер для анализа аргументов из командной строки
-parser.add_argument("-eh", "--end_height", type=float, default=0,
-                    help="Разница высоты между первой и последней точками измерения")       # Добавим в него необязательный аргумент end_height, который передадим
-                                                                                            # в конструктор класса measuring в качестве параметра end_height
-                                                                                            # Значение по умолчанию - 0
+############# Создание и настройка парсера для анализа аргументов командной строки #############
 
+
+parser = argparse.ArgumentParser(description='')        # Создадим парсер для анализа аргументов командной строки
+
+
+# Добавим обязательный аргумент profile, который указывает, какой профиль анализировать: вертикальный или горизонтальный
+parser.add_argument("profile", type=str, choices=['v', 'vertical', 'h', 'horizontal'],
+                    help="Указание программе, какой профиль необходимо анализировать: вертикальный или горизонтальный.")
+
+# Добавим в него необязательный аргумент end_height, который передадим в конструктор класса measuring в качестве параметра end_height.
+# Значение по умолчанию - 0.
+# Используется только для вертикального профиля
+parser.add_argument("-eh", "--end_height", type=float, default=0,
+                    help="Разница эталонных данных между первой и последней точками измерения. (Задаётся только для построения вертикального профиля)")
+
+
+# Добавим флаг тестировочного режима
 parser.add_argument("-tm", "--test_mode", type=bool, default=False,
-                    help='Режим при котором будут показываться дополнительные графики,'
+                    help='Режим при котором будут созданы дополнительные графики,'
                          'которые поясняют шаги выполнения программы.'
                          ' ---> True  (1) - включён'
                          ' ---> False (0) - выключен (значение по умолчанию)')
 
-self_dir = './'                                                                             # Директория в которой будет работать стягивание данных
-measuring(self_dir, 7, 'average_filter', parser.parse_args().end_height)                    # 7 - номер столбца с Креном
+# Добавим тип используемого фильтра
+parser.add_argument("-f", "--filter_type", type=str, choices=["average_filter", "median_filter"], default="average_filter",
+                    help="Тип используемого фильтра - медианный или усредняющий")
+
+# Если в дальнейшем будет так, что гироскоп на тележках будет повёрнут по направлению движения, а не перпендикулярно ему,
+# то нужно будет ввести дополнительный параметр из командной строки, указывающий на это
+parser.add_argument("--gyroscope_rotation", type=bool, default=True,
+                    help='Флаг поворота гироскопа относительно направления движения.')
+
+
+############# Установление данных по умолчанию #############
+
+
+self_dir = './'       # Директория в которой будет работать стягивание данных/
+
+# Заголовок, который автоматически создаётся в CSV файлах
+titles = ["Путь", "Время,mc", "Скорость", "Отметка", "Шаблон", "Статус", "Курс", "Крен", "Тангаж", "Vn", "Ve", "Vh", "Широта", "Долгота", "Высота", "Ax", "Ay", "Az"]
+
+# Тип данных, который будем обрабатывать
+data_type = ''
+if parser.parse_args().profile == 'v' or parser.parse_args().profile == 'vertical':
+    if parser.parse_args().gyroscope_rotation:
+        data_type = 'Крен'
+    else:
+        data_type = 'Тангаж'
+
+elif parser.parse_args().profile == 'h' or parser.parse_args().profile == 'horizontal':
+    data_type = 'Курс'
+
+
+############# Создание класса по стягиванию данных #############
+
+measuring(self_dir, titles.index(data_type), parser.parse_args().filter_type, parser.parse_args().end_height, parser.parse_args().test_mode)
+
+################################################################
