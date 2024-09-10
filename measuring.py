@@ -89,7 +89,7 @@ class Measuring:
 
                 self.marked_coordinates.append(marked_coordinates)
 
-            except UnicodeDecodeError:      # Ошибка, возникающая, если в self.dir присутствуют другие CSV файлы, который не подходят под шаблон CSV файла с измерениями
+            except Exception:      # Ошибка, возникающая, если в self.dir присутствуют другие CSV файлы, который не подходят под шаблон CSV файла с измерениями
                 print(f'Ошибка чтения {self.files[fileIndex]}')
 
         return course, roll, pitch, track_width
